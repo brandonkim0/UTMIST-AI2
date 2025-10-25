@@ -1,8 +1,9 @@
 # import skvideo
 # import skvideo.io
 from environment.environment import RenderMode
-from environment.agent import SB3Agent, CameraResolution, RecurrentPPOAgent, BasedAgent, UserInputAgent, ConstantAgent, run_match, run_real_time_match, gen_reward_manager
-from user.my_agent import SubmittedAgent, ConstantAgent
+from environment.agent import SB3Agent, CameraResolution, RecurrentPPOAgent, BasedAgent, UserInputAgent, ConstantAgent, run_match, run_real_time_match
+from user.train_agent import gen_reward_manager
+from user.my_agent import SubmittedAgent
 
 reward_manager = gen_reward_manager()
 
