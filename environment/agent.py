@@ -1040,7 +1040,7 @@ def train(agent: Agent,
 import pygame
 from pygame.locals import QUIT
 
-def run_real_time_match(agent_1: UserInputAgent, agent_2: Agent, max_timesteps=30*90, resolution=CameraResolution.LOW):
+def run_real_time_match(agent_1: UserInputAgent, agent_2: Agent, max_timesteps: int, resolution=CameraResolution.LOW):
     pygame.init()
 
     pygame.mixer.init()
@@ -1075,6 +1075,19 @@ def run_real_time_match(agent_1: UserInputAgent, agent_2: Agent, max_timesteps=3
 
     if not agent_1.initialized: agent_1.get_env_info(env)
     if not agent_2.initialized: agent_2.get_env_info(env)
+
+    try:
+        if getattr(env, "spec", None) is not None:
+            env.spec.max_episode_steps = int(max_timesteps)
+    except Exception:
+        pass
+
+    observations, _ = env.reset()
+    obs_1 = observations[0]
+    obs_2 = observations[1]
+
+    if not agent_1.initialized: agent_1.get_env_info(env)
+    if not agent_2.initialized: agent_2.get_env_info(env)  
 
     # Run the match loop
     running = True
@@ -1114,8 +1127,17 @@ def run_real_time_match(agent_1: UserInputAgent, agent_2: Agent, max_timesteps=3
         clock.tick(30)
 
         # If the match is over (either terminated or truncated), stop the loop
-        if terminated or truncated:
+        if terminated:
             running = False
+        elif truncated:
+            if timestep + 1 >= max_timesteps:
+                running = False
+            else:
+                try:
+                    if getattr(env, "spec", None) is not None:
+                        env.spec.max_episode_steps += int(max_timesteps)
+                except Exception:
+                    pass
 
         timestep += 1
 
