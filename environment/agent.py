@@ -1129,7 +1129,8 @@ def run_real_time_match(agent_1: UserInputAgent, agent_2: Agent, max_timesteps: 
         # If the match is over (either terminated or truncated), stop the loop
         if terminated:
             running = False
-        elif truncated:
+        # Time Limit Fix
+        elif truncated: 
             if timestep + 1 >= max_timesteps:
                 running = False
             else:
