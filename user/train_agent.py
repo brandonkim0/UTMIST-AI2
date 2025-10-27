@@ -27,6 +27,9 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from environment.agent import *
 from typing import Optional, Type, List, Tuple
 
+from os import listdir
+from os.path import isfile, join
+
 # -------------------------------------------------------------------------
 # ----------------------------- AGENT CLASSES -----------------------------
 # -------------------------------------------------------------------------
@@ -560,6 +563,16 @@ def gen_reward_manager():
         'on_drop_reward': ('weapon_drop_signal', RewTerm(func=on_drop_reward, weight=15))
     }
     return RewardManager(reward_functions, signal_subscriptions)
+
+
+def get_latest_model(directory: str):
+    """Get the path of the model with the largest training steps in 'checkpoints/[directory]'.
+    For example, get_latest_model('experiment_0')
+    could return 'checkpoints\\experiment_0\\rl_model_108000_steps.zip'"""
+    directory = join('checkpoints', directory)
+    files = [f for f in listdir(directory) if isfile(join(directory, f)) and f.startswith('rl_model')]
+    file = sorted(files)[-1][:-4]
+    return join(directory, file)
 
 # -------------------------------------------------------------------------
 # ----------------------------- MAIN FUNCTION -----------------------------
