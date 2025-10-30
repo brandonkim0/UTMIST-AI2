@@ -733,7 +733,7 @@ class BasedAgent(Agent):
         self.time += 1
         pos = self.obs_helper.get_section(obs, 'player_pos')
         opp_pos = self.obs_helper.get_section(obs, 'opponent_pos')
-        opp_KO = self.obs_helper.get_section(obs, 'opponent_state') in [5, 11]
+        opp_KO = self.obs_helper.get_section(obs, 'opponent_state') == 11
         action = self.act_helper.zeros()
 
         # If off the edge, come back
@@ -996,6 +996,64 @@ def plot_results(log_folder, title="Learning Curve"):
     # save to file
     plt.savefig(log_folder + title + ".png")
 
+def plot_winrate(log_folder: str, window: int = 100, out_name: Optional[str] = None) -> None:
+    """
+    Read the match history json and iterate through to plot the winrate over time
+    """
+    path = os.path.join(log_folder, "match_history.jsonl")
+    if not os.path.exists(path):
+        print(f"plot_winrate: no file {path}")
+        return
+
+    timesteps = []
+    wins = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                obj = json.loads(line)
+                timesteps.append(int(obj.get("timesteps", len(timesteps))))
+                wins.append(float(obj.get("player1_result", 0.0)))
+            except Exception:
+                continue
+
+    if len(wins) == 0:
+        print("plot_winrate: no match records found")
+        return
+
+    timesteps = np.array(timesteps, dtype=np.int64)
+    wins = np.array(wins, dtype=np.float32)
+
+    # sort by timesteps
+    order = np.argsort(timesteps)
+    timesteps = timesteps[order]
+    wins = wins[order]
+
+    if window <= 1 or len(wins) < window:
+        # cumulative average if window too large
+        win_rates = np.cumsum(wins) / (np.arange(len(wins), dtype=np.float32) + 1.0)
+        win_ts = timesteps
+    else:
+        kernel = np.ones(window, dtype=np.float32) / float(window)
+        win_rates = np.convolve(wins, kernel, mode="valid")
+        win_ts = timesteps[window - 1 :]
+
+    win_pct = win_rates * 100.0
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(win_ts, win_pct, color="tab:orange", lw=1.8)
+    ax.fill_between(win_ts, 0, win_pct, color="tab:orange", alpha=0.15)
+    ax.set_ylim(0, 100)
+    ax.set_xlabel("Timesteps")
+    ax.set_ylabel("Win rate (%)")
+    ax.set_title("Win Rate Over Time")
+    ax.grid(alpha=0.3)
+
+    if out_name is None:
+        out_name = os.path.join(log_folder, "winrate.png")
+    plt.tight_layout()
+    plt.savefig(out_name)
+    plt.close(fig)
+
 def train(agent: Agent,
           reward_manager: RewardManager,
           save_handler: Optional[SaveHandler]=None,
@@ -1020,6 +1078,58 @@ def train(agent: Agent,
         env = Monitor(env, log_dir)
 
     base_env = env.unwrapped if hasattr(env, 'unwrapped') else env
+    match_history_path = os.path.join(log_dir, "match_history.jsonl")
+    def _on_win_handler(*args, **kwargs):
+        """
+        Append each log entry after a match to a JSONL
+        """
+        try:
+            raw = getattr(base_env, "raw_env", base_env)
+            # use get stats to get the lives
+            p1 = raw.get_stats(0)
+            p2 = raw.get_stats(1)
+            winner = kwargs.get("agent", kwargs.get("winner", None))
+            if winner is None:
+                if p1.lives_left > p2.lives_left:
+                    player1_result = 1.0
+                elif p1.lives_left < p2.lives_left:
+                    player1_result = 0.0
+                else:
+                    player1_result = 0.5
+            else:
+                w = str(winner).lower()
+                if w in ("player", "player_1", "agent_1", "p1", "0"):
+                    player1_result = 1.0
+                elif w in ("opponent", "player_2", "agent_2", "p2", "1"):
+                    player1_result = 0.0
+                else:
+                    if p1.lives_left > p2.lives_left:
+                        player1_result = 1.0
+                    elif p1.lives_left < p2.lives_left:
+                        player1_result = 0.0
+                    else:
+                        player1_result = 0.5
+            entry = {
+                "timesteps": int(getattr(raw, "steps", 0)),
+                "player1_result": float(player1_result),
+                "player1_lives": int(p1.lives_left),
+                "player2_lives": int(p2.lives_left)
+            }
+            with open(match_history_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception:
+            pass
+    
+    try:
+        raw_env = base_env.raw_env if hasattr(base_env, "raw_env") else base_env
+        if hasattr(raw_env, "win_signal"):
+            raw_env.win_signal.connect(_on_win_handler)
+    except Exception:
+            pass
+
+    else:
+        base_env = env.unwrapped if hasattr(env, 'unwrapped') else env
+            
     try:
         agent.get_env_info(base_env)
         base_env.on_training_start()
@@ -1035,6 +1145,7 @@ def train(agent: Agent,
 
     if train_logging == TrainLogging.PLOT:
         plot_results(log_dir)
+        plot_winrate(log_dir)
 
 ## Run Human vs AI match function
 import pygame
