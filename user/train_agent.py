@@ -570,9 +570,9 @@ def get_latest_model(directory: str):
     For example, get_latest_model('experiment_0')
     could return 'checkpoints\\experiment_0\\rl_model_108000_steps.zip'"""
     directory = join('checkpoints', directory)
-    files = [f for f in listdir(directory) if isfile(join(directory, f)) and f.startswith('rl_model')]
+    files = [join(directory, f) for f in listdir(directory) if isfile(join(directory, f)) and f.startswith('rl_model')]
     file = max(files, key=os.path.getctime)
-    return join(directory, file)
+    return file
 
 # -------------------------------------------------------------------------
 # ----------------------------- MAIN FUNCTION -----------------------------
