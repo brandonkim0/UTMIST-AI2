@@ -26,7 +26,7 @@ from sb3_contrib import RecurrentPPO # Importing an LSTM
 # from user.my_agent_tt import TTMLPPolicy
 
 
-class HammerDairAgent(Agent):
+class SubmittedAgent(Agent):
 
     def __init__(
             self, hold_frames: int = 1,
