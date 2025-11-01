@@ -26,52 +26,106 @@ from sb3_contrib import RecurrentPPO # Importing an LSTM
 # from user.my_agent_tt import TTMLPPolicy
 
 
-class SubmittedAgent(Agent):
-    '''
-    Input the **file_path** to your agent here for submission!
-    '''
+class HammerDairAgent(Agent):
+
     def __init__(
-        self,
-        file_path: Optional[str] = None,
+            self, hold_frames: int = 1,
+            *args,
+            **kwargs
     ):
-        super().__init__(file_path)
-
-        # To run a TTNN model, you must maintain a pointer to the device and can be done by 
-        # uncommmenting the line below to use the device pointer
-        # self.mesh_device = ttnn.open_mesh_device(ttnn.MeshShape(1,1))
-
-    def _initialize(self) -> None:
-        if self.file_path is None:
-            self.model = PPO("MlpPolicy", self.env, verbose=0)
-            del self.env
-        else:
-            self.model = PPO.load(self.file_path)
-
-        # To run the sample TTNN model during inference, you can uncomment the 5 lines below:
-        # This assumes that your self.model.policy has the MLPPolicy architecture defined in `train_agent.py` or `my_agent_tt.py`
-        # mlp_state_dict = self.model.policy.features_extractor.model.state_dict()
-        # self.tt_model = TTMLPPolicy(mlp_state_dict, self.mesh_device)
-        # self.model.policy.features_extractor.model = self.tt_model
-        # self.model.policy.vf_features_extractor.model = self.tt_model
-        # self.model.policy.pi_features_extractor.model = self.tt_model
-
-    def _gdown(self) -> str:
-        data_path = "rl-model.zip"
-        if not os.path.isfile(data_path):
-            print(f"Downloading {data_path}...")
-            # Place a link to your PUBLIC model data here. This is where we will download it from on the tournament server.
-            url = "https://drive.google.com/file/d/1JIokiBOrOClh8piclbMlpEEs6mj3H1HJ/view?usp=sharing"
-            gdown.download(url, output=data_path, fuzzy=True)
-        return data_path
+        super().__init__(*args, **kwargs)
+        self.time = 0
+        self.hold_frames = max(1, int(hold_frames))
+        self.jumping = False
+        self.bufferJump = 0
+        self.bufferPickup = 0
 
     def predict(self, obs):
-        action, _ = self.model.predict(obs)
+        self.time += 1
+        pos = self.obs_helper.get_section(obs, 'player_pos')
+        opp_pos = self.obs_helper.get_section(obs, 'opponent_pos')
+        opp_KO = self.obs_helper.get_section(obs, 'opponent_state') in [11]
+        plr_KO = self.obs_helper.get_section(obs, 'player_state') in [11]
+        action = self.act_helper.zeros()
+        plrWeapon = self.obs_helper.get_section(obs, 'player_weapon_type')
+        plrFacing = self.obs_helper.get_section(obs, 'player_facing')
+        spawners = self.obs_helper.get_section(obs, 'player_spawner_1')
+        jumps = self.obs_helper.get_section(obs, 'player_jumps_left')
+        inGap = False
+        #print(spawners)
+        #print(jumps)
+        
+        if plr_KO:
+            return action
+        
+        if 2 > pos[0] > -2:
+            inGap = True
+            if jumps == [0.]:
+                action = self.act_helper.press_keys(['a'])
+                return action
+                
+
+        if self.jumping:
+            if opp_KO:
+                self.jumping = False
+                return action
+            if self.obs_helper.get_section(obs, 'player_state') == [1.]:
+                action = self.act_helper.press_keys(['space','s','j'], action)
+                self.jumping = False
+            return action
+
+        if pos[0] > 10.67/2:
+            action = self.act_helper.press_keys(['a'])
+        elif pos[0] < -10.67/2:
+            action = self.act_helper.press_keys(['d'])
+        if plrWeapon != [2.]:
+            if spawners[2] == [1.]:
+                if plr_KO:
+                    return action
+                if pos[0] < spawners[0]:
+                    action = self.act_helper.press_keys(['d'])
+                elif pos[0] > spawners[0]:
+                    action = self.act_helper.press_keys(['a'])
+                if pos[1] > spawners[1]:
+                    action = self.act_helper.press_keys(['space'], action)
+                if (abs(pos[0] - spawners[0] < 0.9)) and abs(pos[1] - spawners[1]) < 0.7:
+                    if self.bufferPickup == 0:
+                        action = self.act_helper.press_keys(['h'], action)
+                        self.bufferPickup = 1
+                    else:
+                        self.bufferPickup = 0
+            elif not inGap:
+                if not opp_KO:
+                    if (opp_pos[0] > pos[0]):
+                        action = self.act_helper.press_keys(['d'])
+                    else:
+                        action = self.act_helper.press_keys(['a'])
+                if (pos[1] > 1.6 or pos[1] > opp_pos[1]) and self.time % 2 == 0:
+                    action = self.act_helper.press_keys(['space'], action)
+                if (pos[0] - opp_pos[0])**2 + (pos[1] - opp_pos[1])**2 < 4.0:
+                    action = self.act_helper.press_keys(['j'], action)
+                return action
+        else:
+            if pos[0] < 4 or pos[0] > 7:
+               if pos[0] < 6:
+                   action = self.act_helper.press_keys(['d'], action)
+               else:
+                   action = self.act_helper.press_keys(['a'], action)
+            else:
+                if opp_KO:
+                    return action 
+                if opp_pos[0] - pos[0] > -0.2:
+                    if plrFacing == [0.]:
+                        action = self.act_helper.press_keys(['d'], action)
+                    action = self.act_helper.press_keys(['s','j'], action)
+                if -0.2 <= (pos[0] - opp_pos[0]) <= 0.6:
+                    if (pos[1] - opp_pos[1]) > 0.1:
+                        action = self.act_helper.press_keys(['space','s','j'], action)
+                    else:
+                        if plrFacing == [1.]:
+                            action = self.act_helper.press_keys(['a'], action)
+                        action = self.act_helper.press_keys(['s','j'], action)
+                        self.jumping = True
+            if pos[1] > 0.85  and self.time % 2 == 0:
+                action = self.act_helper.press_keys(['space'], action)
         return action
-
-    def save(self, file_path: str) -> None:
-        self.model.save(file_path)
-
-    # If modifying the number of models (or training in general), modify this
-    def learn(self, env, total_timesteps, log_interval: int = 4):
-        self.model.set_env(env)
-        self.model.learn(total_timesteps=total_timesteps, log_interval=log_interval)
